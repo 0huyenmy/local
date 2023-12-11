@@ -2,7 +2,7 @@
 // mongodb user model
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
-
+const jwt = require("jsonwebtoken");
 const handleSignUp = async (req, res) => {
 
    try {
@@ -10,7 +10,7 @@ const handleSignUp = async (req, res) => {
       const ress = await User.create({
          name, email, password, dateOfBirth
       });
-      res.status(201).send.json({
+      res.status(201).send({
          mess: "tao thanh cong", data: ress
       })
    } catch (err) {
@@ -22,90 +22,174 @@ const handleSignUp = async (req, res) => {
 
 const signUp = async (req, res) => {
    const { name, email, password, dateOfBirth } = req.body;
-
-   if (name == "" || email == "" || password == "" || dateOfBirth == "") {
-      res.json({
-         status: "FAILED",
-         message: "Empty input fields!",
-      });
-   } else if (!/^[a-zA-Z ]*$/.test(name)) {
-      res.json({
-         status: "FAILED",
-         message: "Invalid name entered",
-      });
-   } else if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
-      res.json({
-         status: "FAILED",
-         message: "Invalid email entered",
-      });
-   } else if (!new Date(dateOfBirth).getTime()) {
-      res.json({
-         status: "FAILED",
-         message: "Invalid date of birth entered",
-      });
-   } else if (password.length < 8) {
-      res.json({
-         status: "FAILED",
-         message: "Password is too short!",
-      });
-   } else {
-      // Checking if user already exists
-      User.find({ email })
-         .then((result) => {
-            if (result.length) {
-               // A user already exists
-               res.json({
-                  status: "FAILED",
-                  message: "User with the provided email already exists",
-               });
-            } else {
-               // Try to create new user
-
-               // password handling
-               const saltRounds = 10;
-               bcrypt
-                  .hash(password, saltRounds)
-                  .then((hashedPassword) => {
-                     const newUser = new User({
-                        name,
-                        email,
-                        password: hashedPassword,
-                        dateOfBirth,
-                     });
-
-                     newUser
-                        .save()
-                        .then((result) => {
-                           res.json({
-                              status: "SUCCESS",
-                              message: "Signup successful",
-                              data: result,
-                           });
-                        })
-                        .catch((err) => {
-                           res.json({
-                              status: "FAILED",
-                              message: "An error occurred while saving user account!",
-                           });
-                        });
-                  })
-                  .catch((err) => {
-                     res.json({
-                        status: "FAILED",
-                        message: "An error occurred while hashing password!",
-                     });
-                  });
-            }
-         })
-         .catch((err) => {
-            console.log(err);
-            res.json({
-               status: "FAILED",
-               message: "An error occurred while checking for existing user!",
-            });
+   try {
+      if (name === "" || email === "" || password === "" || dateOfBirth === "") {
+         return res.status(400).json({
+            status: "FAILED",
+            message: "Empty input fields!",
          });
+      } else if (!/^[a-zA-Z ]*$/.test(name)) {
+         return res.status(400).json({
+            status: "FAILED",
+            message: "Invalid name entered",
+         });
+      } else if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
+         return res.status(400).json({
+            status: "FAILED",
+            message: "Invalid email entered",
+         });
+      } else if (!new Date(dateOfBirth).getTime()) {
+         return res.status(400).json({
+            status: "FAILED",
+            message: "Invalid date of birth entered",
+         });
+      } else if (password.length < 8) {
+         return res.status(400).json({
+            status: "FAILED",
+            message: "Password is too short!",
+         });
+      }
+      const existingUser = await User.findOne({ email });
+
+      if (existingUser) {
+         return res.status(409).json({
+            status: "FAILED",
+            message: "User with the provided email already exists",
+         });
+      }
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+      const newUser = new User({
+         name,
+         email,
+         password: hashedPassword,
+         dateOfBirth,
+      });
+
+      const savedUser = await newUser.save();
+
+      const { accessToken, refreshToken } = generateToken(savedUser);
+
+      res.status(201).json({
+         status: "SUCCESS",
+         message: "Signup successful",
+         data: {
+            name: savedUser.name,
+            email: savedUser.email,
+            token: {
+               accessToken,
+               refreshToken
+            }
+
+         }
+
+      });
+   } catch (error) {
+      console.error(error);
+      res.status(500).json({
+         status: "FAILED",
+         message: "An error occurred during signup",
+      });
    }
 }
+const generateToken = (user) => {
+   const accessTokenPayload = {
+      userId: user._id,
+      email: user.email,
+   };
 
-module.exports = { handleSignUp };
-module.exports = { signUp }
+   const refreshTokenPayload = {
+      userId: user._id,
+   };
+
+   const secretKey = 'SecretKey';
+   const accessToken = jwt.sign(accessTokenPayload, secretKey, { expiresIn: '2m' });
+   const refreshToken = jwt.sign(refreshTokenPayload, secretKey, { expiresIn: '3d' });
+
+   return { accessToken, refreshToken };
+};
+
+
+const signIn = async (req, res) => {
+   const { email, password } = req.body;
+
+   try {
+      if (email === "" || password === "") {
+         return res.status(400).json({
+            status: "FAILED",
+            message: "Empty credentials supplied",
+         });
+      }
+      const user = await User.findOne({ email });
+
+      if (!user) {
+         return res.status(401).json({
+            status: "FAILED",
+            message: "User not found",
+         });
+      }
+      const passwordMatch = await bcrypt.compare(password, user.password);
+
+      if (passwordMatch) {
+         const { accessToken, refreshToken } = generateToken(user);
+         res.status(200).json({
+            status: "SUCCESS",
+            message: "Signin successful",
+            data: {
+               email: user.email,
+               name: user.name,
+               token:{
+                  accessToken, 
+                  refreshToken
+               }
+               
+            },
+         });
+      } else {
+         res.status(401).json({
+            status: "FAILED",
+            message: "Password not correct",
+         });
+      }
+   } catch (error) {
+      console.error(error);
+      res.status(500).json({
+         status: "FAILED",
+         message: "An error occurred during signin",
+      });
+   }
+};
+
+const blacklistedTokens = new Set();
+
+const signOut = (req, res) => {
+   try {
+      const accessToken = req.headers.authorization?.split(' ')[1];
+      const refreshToken = req.body.refreshToken;
+
+      if (accessToken) {
+         blacklistedTokens.delete(accessToken);
+      }
+
+      if (refreshToken) {
+         blacklistedTokens.delete(refreshToken);
+      }
+
+      res.status(200).json({
+         status: "SUCCESS",
+         message: "Signout successful",
+      });
+   } catch (error) {
+      console.error(error);
+      res.status(500).json({
+         status: "FAILED",
+         message: "An error occurred during signout",
+      });
+   }
+};
+
+
+
+
+module.exports = { signUp, handleSignUp, signIn, signOut }
