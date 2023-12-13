@@ -1,8 +1,11 @@
 
 // mongodb user model
 const User = require("../models/User");
+const {generateToken}=require("../middlewares/jwt")
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { response } = require("express");
+//const cookie=require("cookie-parser")
 const handleSignUp = async (req, res) => {
 
    try {
@@ -93,22 +96,6 @@ const signUp = async (req, res) => {
       });
    }
 }
-const generateToken = (user) => {
-   const accessTokenPayload = {
-      userId: user._id,
-      email: user.email,
-   };
-
-   const refreshTokenPayload = {
-      userId: user._id,
-   };
-
-   const secretKey = 'SecretKey';
-   const accessToken = jwt.sign(accessTokenPayload, secretKey, { expiresIn: '2m' });
-   const refreshToken = jwt.sign(refreshTokenPayload, secretKey, { expiresIn: '3d' });
-
-   return { accessToken, refreshToken };
-};
 
 
 const signIn = async (req, res) => {
@@ -133,6 +120,8 @@ const signIn = async (req, res) => {
 
       if (passwordMatch) {
          const { accessToken, refreshToken } = generateToken(user);
+         await User.findByIdAndUpdate(user._id,{refreshToken},{new:true})
+         res.cookie('refreshToken',refreshToken,{httpOnly: true, maxAge: 3*24*60*60*1000})
          res.status(200).json({
             status: "SUCCESS",
             message: "Signin successful",
@@ -141,7 +130,7 @@ const signIn = async (req, res) => {
                name: user.name,
                token:{
                   accessToken, 
-                  refreshToken
+                  //refreshToken
                }
                
             },
@@ -161,34 +150,16 @@ const signIn = async (req, res) => {
    }
 };
 
-const blacklistedTokens = new Set();
 
-const signOut = (req, res) => {
-   try {
-      const accessToken = req.headers.authorization?.split(' ')[1];
-      const refreshToken = req.body.refreshToken;
 
-      if (accessToken) {
-         blacklistedTokens.delete(accessToken);
-      }
-
-      if (refreshToken) {
-         blacklistedTokens.delete(refreshToken);
-      }
-
-      res.status(200).json({
-         status: "SUCCESS",
-         message: "Signout successful",
-      });
-   } catch (error) {
-      console.error(error);
-      res.status(500).json({
-         status: "FAILED",
-         message: "An error occurred during signout",
-      });
-   }
+const signOut = async (req, res) => {
+   const cookie =req.cookies
+   if(!cookie||!cookie.refreshToken)throw new Error('No refresh token in cookies')
+   await User.findOneAndUpdate({refreshToken: cookie.refreshToken},{refreshToken:''},{new: true})
+   res.clearCookie('refreshToken',{httpOnly: true, secure: true})
+   return res.status(200).json({status: "SUCCESS",
+             message: "Signout successful"})
 };
-
 
 
 

@@ -12,6 +12,6 @@ authRouter
 
 authRouter.post("/signup", signUp);
 authRouter.post("/signin", signIn);
-authRouter.post("/signout", signOut);
+authRouter.get("/signout", signOut);
 
 module.exports = { authRouter };
