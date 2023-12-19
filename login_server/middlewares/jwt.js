@@ -1,6 +1,6 @@
-const User = require("../models/User");
-const bcrypt = require("bcrypt");
+require('dotenv').config(); 
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto")
 
 const generateToken = (user) => {
     const accessTokenPayload = {
@@ -12,11 +12,15 @@ const generateToken = (user) => {
        userId: user._id,
     };
  
-    const secretKey = 'SecretKey';
+    const secretKey = process.env.SECRETKEY;
     const accessToken = jwt.sign(accessTokenPayload, secretKey, { expiresIn: '2m' });
     const refreshToken = jwt.sign(refreshTokenPayload, secretKey, { expiresIn: '3d' });
  
     return { accessToken, refreshToken };
  };
- module.exports ={generateToken};
+
+ const generateTokenReset = () => {
+   return crypto.randomBytes(20).toString('hex');
+};
+ module.exports ={generateToken, generateTokenReset};
  

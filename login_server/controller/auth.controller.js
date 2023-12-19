@@ -1,10 +1,12 @@
 
 // mongodb user model
 const User = require("../models/User");
-const {generateToken}=require("../middlewares/jwt")
+const { generateToken, generateTokenReset } = require("../middlewares/jwt")
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { response } = require("express");
+const { transporter } = require("../middlewares/nodemailer")
+require('dotenv').config();
+//const env = require('../env');
 //const cookie=require("cookie-parser")
 const handleSignUp = async (req, res) => {
 
@@ -120,19 +122,19 @@ const signIn = async (req, res) => {
 
       if (passwordMatch) {
          const { accessToken, refreshToken } = generateToken(user);
-         await User.findByIdAndUpdate(user._id,{refreshToken},{new:true})
-         res.cookie('refreshToken',refreshToken,{httpOnly: true, maxAge: 3*24*60*60*1000})
+         await User.findByIdAndUpdate(user._id, { refreshToken }, { new: true })
+         res.cookie('refreshToken', refreshToken, { httpOnly: true, maxAge: 3 * 24 * 60 * 60 * 1000 })
          res.status(200).json({
             status: "SUCCESS",
             message: "Signin successful",
             data: {
                email: user.email,
                name: user.name,
-               token:{
-                  accessToken, 
+               token: {
+                  accessToken,
                   //refreshToken
                }
-               
+
             },
          });
       } else {
@@ -153,14 +155,179 @@ const signIn = async (req, res) => {
 
 
 const signOut = async (req, res) => {
-   const cookie =req.cookies
-   if(!cookie||!cookie.refreshToken)throw new Error('No refresh token in cookies')
-   await User.findOneAndUpdate({refreshToken: cookie.refreshToken},{refreshToken:''},{new: true})
-   res.clearCookie('refreshToken',{httpOnly: true, secure: true})
-   return res.status(200).json({status: "SUCCESS",
-             message: "Signout successful"})
+   try {
+      const cookie = req.cookies;
+      if (!cookie || !cookie.refreshToken) {
+         throw new Error('No refresh token in cookies');
+      }
+
+      const updatedUser = await User.findOneAndUpdate(
+         { refreshToken: cookie.refreshToken },
+         { refreshToken: '' },
+         { new: true }
+      );
+
+      if (!updatedUser) {
+         // User not found, i.e., failed sign-out
+         return res.status(401).json({
+            status: "ERROR",
+            message: "Failed to sign out. User not found or invalid refresh token.",
+         });
+      }
+
+      res.clearCookie('refreshToken', { httpOnly: true, secure: true });
+      return res.status(200).json({
+         status: "SUCCESS",
+         message: "Signout successful",
+      });
+   } catch (error) {
+      console.error(error);
+      return res.status(500).json({
+         status: "ERROR",
+         message: "Internal Server Error",
+      });
+   }
 };
 
 
 
-module.exports = { signUp, handleSignUp, signIn, signOut }
+const getCurrent = async (req, res) => {
+   try {
+      const accessToken = req.headers.authorization?.split(' ')[1];
+      const secretKey = process.env.SECRETKEY;
+      if (!accessToken) {
+         return res.status(401).json({
+            status: 'ERROR',
+            message: 'No access token provided',
+         });
+      }
+
+      const decodedToken = jwt.verify(accessToken, secretKey);
+
+      const userId = decodedToken.userId;
+
+      const user = await User.findById(userId);
+
+      if (!user) {
+         return res.status(401).json({
+            status: 'ERROR',
+            message: 'User not found',
+         });
+      }
+
+      return res.status(200).json({
+         status: 'SUCCESS',
+         data: {
+            id: user._id,
+            username: user.name,
+            email: user.email,
+            birthday: user.dateOfBirth,
+
+         },
+      });
+   } catch (error) {
+      console.error(error);
+
+      if (error.name === 'JsonWebTokenError') {
+         return res.status(401).json({
+            status: 'ERROR',
+            message: 'Invalid token',
+         });
+      }
+
+      return res.status(500).json({
+         status: 'ERROR',
+         message: 'Internal Server Error',
+      });
+   }
+};
+
+const forgotPass = async (req, res) => {
+   const { email } = req.body;
+
+   try {
+      // Tìm user bằng email
+      const user = await User.findOne({ email });
+
+      if (!user) {
+         return res.status(404).json({
+            status: 'ERROR',
+            message: 'User not found',
+         });
+      }
+
+      // Tạo reset Token ngẫu nhiên
+      const resetToken = generateTokenReset();
+
+      // Lưu reset Token và thời gian hiệu lực vào DB
+      user.resetPasswordToken = resetToken;
+      user.resetPasswordExpires = Date.now() + 3 * 60 * 1000; // Token có hiệu lực trong 3min
+
+      await user.save();
+
+      // Gửi email với link reset
+      const resetLink = `http://your-app-url/resetPassword?token=${resetToken}`;
+      const mailOptions = {
+         from: 'Cineflix support<support@cineflix.com>',
+         to: email,
+         subject: 'Password Reset',
+         text: `Click the following link to reset your password: ${resetLink}`,
+      };
+
+      await transporter.sendMail(mailOptions);
+
+      return res.status(200).json({
+         status: 'SUCCESS',
+         message: 'Password reset email sent successfully',
+      });
+   } catch (error) {
+      console.error(error);
+      return res.status(500).json({
+         status: 'ERROR',
+         message: 'Internal Server Error',
+      });
+   }
+};
+
+const resetPass = async (req, res) => {
+   const { token, newPassword } = req.body;
+
+   try {
+      // Tìm người dùng với token resetPasswordToken và token chưa hết hạn
+      const user = await User.findOne({
+         resetPasswordToken: token,
+         resetPasswordExpires: { $gt: Date.now() },
+      });
+
+      if (!user) {
+         return res.status(400).json({
+            status: 'ERROR',
+            message: 'Invalid or expired reset token',
+         });
+      }
+
+      // Hash mật khẩu mới
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Cập nhật mật khẩu của người dùng và xóa thông tin reset
+      user.password = hashedPassword;
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpires = undefined;
+
+      // Lưu người dùng
+      await user.save();
+
+      return res.status(200).json({
+         status: 'SUCCESS',
+         message: 'Password reset successfully',
+      });
+   } catch (error) {
+      console.error(error);
+      return res.status(500).json({
+         status: 'ERROR',
+         message: 'Internal Server Error',
+      });
+   }
+};
+
+module.exports = { signUp, handleSignUp, signIn, signOut, getCurrent, forgotPass, resetPass }

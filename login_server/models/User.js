@@ -7,6 +7,8 @@ const UserSchema = new Schema({
     password: String,
     dateOfBirth: Date,
     refreshToken: String,
+    resetPasswordToken: String,
+    resetPasswordExpires: Date
 });
 
 const User = mongoose.model('User', UserSchema);
