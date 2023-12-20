@@ -1,14 +1,14 @@
 
 // mongodb user model
 const User = require("../models/User");
-const { generateToken, generateTokenReset } = require("../middlewares/jwt")
+const { generateTokenMiddle, generateTokenResetMiddle } = require("../middlewares/jwt")
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { transporter } = require("../middlewares/nodemailer")
+const { transporterMiddle } = require("../middlewares/nodemailer")
 require('dotenv').config();
-//const env = require('../env');
-//const cookie=require("cookie-parser")
-const handleSignUp = async (req, res) => {
+
+
+const createUserController = async (req, res) => {
 
    try {
       const { name, email, password, dateOfBirth } = req.body;
@@ -16,7 +16,7 @@ const handleSignUp = async (req, res) => {
          name, email, password, dateOfBirth
       });
       res.status(201).send({
-         mess: "tao thanh cong", data: ress
+         mess: "create success", data: ress
       })
    } catch (err) {
       res.status(500).send({
@@ -25,7 +25,7 @@ const handleSignUp = async (req, res) => {
    }
 }
 
-const signUp = async (req, res) => {
+const signUpController = async (req, res) => {
    const { name, email, password, dateOfBirth } = req.body;
    try {
       if (name === "" || email === "" || password === "" || dateOfBirth === "") {
@@ -74,7 +74,7 @@ const signUp = async (req, res) => {
 
       const savedUser = await newUser.save();
 
-      const { accessToken, refreshToken } = generateToken(savedUser);
+      const { accessToken, refreshToken } = generateTokenMiddle(savedUser);
 
       res.status(201).json({
          status: "SUCCESS",
@@ -100,7 +100,7 @@ const signUp = async (req, res) => {
 }
 
 
-const signIn = async (req, res) => {
+const signInController = async (req, res) => {
    const { email, password } = req.body;
 
    try {
@@ -121,7 +121,7 @@ const signIn = async (req, res) => {
       const passwordMatch = await bcrypt.compare(password, user.password);
 
       if (passwordMatch) {
-         const { accessToken, refreshToken } = generateToken(user);
+         const { accessToken, refreshToken } = generateTokenMiddle(user);
          await User.findByIdAndUpdate(user._id, { refreshToken }, { new: true })
          res.cookie('refreshToken', refreshToken, { httpOnly: true, maxAge: 3 * 24 * 60 * 60 * 1000 })
          res.status(200).json({
@@ -154,7 +154,7 @@ const signIn = async (req, res) => {
 
 
 
-const signOut = async (req, res) => {
+const signOutController = async (req, res) => {
    try {
       const cookie = req.cookies;
       if (!cookie || !cookie.refreshToken) {
@@ -191,7 +191,7 @@ const signOut = async (req, res) => {
 
 
 
-const getCurrent = async (req, res) => {
+const getCurrentController = async (req, res) => {
    try {
       const accessToken = req.headers.authorization?.split(' ')[1];
       const secretKey = process.env.SECRETKEY;
@@ -242,7 +242,7 @@ const getCurrent = async (req, res) => {
    }
 };
 
-const forgotPass = async (req, res) => {
+const forgotPassController = async (req, res) => {
    const { email } = req.body;
 
    try {
@@ -257,7 +257,7 @@ const forgotPass = async (req, res) => {
       }
 
       // Tạo reset Token ngẫu nhiên
-      const resetToken = generateTokenReset();
+      const resetToken = generateTokenResetMiddle();
 
       // Lưu reset Token và thời gian hiệu lực vào DB
       user.resetPasswordToken = resetToken;
@@ -274,7 +274,7 @@ const forgotPass = async (req, res) => {
          text: `Click the following link to reset your password: ${resetLink}`,
       };
 
-      await transporter.sendMail(mailOptions);
+      await transporterMiddle.sendMail(mailOptions);
 
       return res.status(200).json({
          status: 'SUCCESS',
@@ -289,7 +289,7 @@ const forgotPass = async (req, res) => {
    }
 };
 
-const resetPass = async (req, res) => {
+const resetPassController = async (req, res) => {
    const { token, newPassword } = req.body;
 
    try {
@@ -330,4 +330,4 @@ const resetPass = async (req, res) => {
    }
 };
 
-module.exports = { signUp, handleSignUp, signIn, signOut, getCurrent, forgotPass, resetPass }
+module.exports = { signUpController, createUserController, signInController, signOutController, getCurrentController, forgotPassController, resetPassController }

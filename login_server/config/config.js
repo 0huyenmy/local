@@ -1,9 +1,10 @@
-const { URI } = require("../constants/common");
+require('dotenv').config();
+const URL = process.env.MONGO_URL ;
 const mongoose=require("mongoose");
 const DBConfig = {
     connect: async function connect(){
         try{
-            await mongoose.connect(URI);
+            await mongoose.connect(URL);
             console.log("Connected to MongoDB");
         }catch(error){
             console.log("Can not connect to MongoDB" , `mess: ${error.message}`);

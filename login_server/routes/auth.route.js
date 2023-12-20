@@ -3,16 +3,16 @@ const authRouter = Router();
 
 // Password handler
 
-const { handleSignUp , signUp, signIn, signOut, getCurrent, forgotPass, resetPass} = require("../controller/auth.controller");
+const { createUserController , signUpController, signInController, 
+    signOutController, getCurrentController, forgotPassController, 
+    resetPassController} = require("../controller/auth.controller");
 
 
-authRouter.post("/create",handleSignUp)
-
-
-authRouter.post("/signup", signUp);
-authRouter.post("/signin", signIn);
-authRouter.get("/signout", signOut);
-authRouter.get("/getCurrent", getCurrent);
-authRouter.post("/forgotPass", forgotPass);
-authRouter.post("/resetPass", resetPass);
+authRouter.post("/create",createUserController)
+authRouter.post("/signup", signUpController);
+authRouter.post("/signin", signInController);
+authRouter.get("/signout", signOutController);
+authRouter.get("/getCurrent", getCurrentController);
+authRouter.post("/forgotPass", forgotPassController);
+authRouter.post("/resetPass", resetPassController);
 module.exports = { authRouter };
