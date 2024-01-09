@@ -5,7 +5,7 @@ const authRouter = Router();
 
 const { createUserController , signUpController, signInController, 
     signOutController, getCurrentController, forgotPassController, 
-    resetPassController} = require("../controller/auth.controller");
+    resetPassController, getPosts} = require("../controller/auth.controller");
 
 
 authRouter.post("/create",createUserController)
@@ -15,4 +15,5 @@ authRouter.get("/signout", signOutController);
 authRouter.get("/getCurrent", getCurrentController);
 authRouter.post("/forgotPass", forgotPassController);
 authRouter.post("/resetPass", resetPassController);
+authRouter.get("/getPost", getPosts);
 module.exports = { authRouter };
